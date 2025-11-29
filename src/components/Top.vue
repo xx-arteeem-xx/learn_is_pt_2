@@ -21,10 +21,16 @@ export default {
                 name: '',
                 data: null
             },
+            aesFileInfo: {
+                name: '',
+                data: null
+            },
             rc4Key: '',
+            aesKey: '',
+            aesMode: 'CBC',
+            aesIv: '0123456789ABCDEF',
             operationResult: '',
-            operationError: '',
-            encryptedData: null
+            operationError: ''
         }
     },
     computed: {
@@ -33,6 +39,9 @@ export default {
         },
         canProcessRc4() {
             return this.rc4FileInfo.data && this.rc4Key.length > 0
+        },
+        canProcessAes() {
+            return this.aesFileInfo.data && this.aesKey.length > 0
         }
     },
     methods: {
@@ -83,6 +92,19 @@ export default {
             this.clearMessages()
         },
 
+        handleAesFileUpload(event) {
+            const file = event.target.files[0]
+            if (!file) return
+
+            this.aesFileInfo.name = file.name
+            const reader = new FileReader()
+            reader.onload = (e) => {
+                this.aesFileInfo.data = new Uint8Array(e.target.result)
+            }
+            reader.readAsArrayBuffer(file)
+            this.clearMessages()
+        },
+
         vernamEncrypt() {
             if (!this.validateFileSizes()) return
 
@@ -120,27 +142,25 @@ export default {
 
         rc4Encrypt() {
             try {
-                const result = this.rc4Process(this.rc4FileInfo.data, this.rc4Key);
-                this.downloadFile(result, 'encrypted_rc4.bin');
-                this.operationResult = 'Файл успешно зашифрован методом RC4';
-                this.operationError = '';
-
-                this.encryptedData = result;
+                const result = this.rc4Process(this.rc4FileInfo.data, this.rc4Key)
+                this.downloadFile(result, 'encrypted_rc4.bin')
+                this.operationResult = 'Файл успешно зашифрован методом RC4'
+                this.operationError = ''
             } catch (error) {
-                this.operationError = 'Ошибка при шифровании: ' + error.message;
-                this.operationResult = '';
+                this.operationError = 'Ошибка при шифровании: ' + error.message
+                this.operationResult = ''
             }
         },
 
         rc4Decrypt() {
             try {
-                const result = this.rc4Process(this.rc4FileInfo.data, this.rc4Key);
-                this.downloadFile(result, 'decrypted_rc4.bin');
-                this.operationResult = 'Файл успешно расшифрован методом RC4';
-                this.operationError = '';
+                const result = this.rc4Process(this.rc4FileInfo.data, this.rc4Key)
+                this.downloadFile(result, 'decrypted_rc4.bin')
+                this.operationResult = 'Файл успешно расшифрован методом RC4'
+                this.operationError = ''
             } catch (error) {
-                this.operationError = 'Ошибка при расшифровании: ' + error.message;
-                this.operationResult = '';
+                this.operationError = 'Ошибка при расшифровании: ' + error.message
+                this.operationResult = ''
             }
         },
 
@@ -170,16 +190,86 @@ export default {
             for (let k = 0; k < data.length; k++) {
                 i = (i + 1) % 256;
                 j = (j + S[i]) % 256;
-
                 const temp = S[i];
                 S[i] = S[j];
                 S[j] = temp;
-
                 const K = S[(S[i] + S[j]) % 256];
                 result[k] = data[k] ^ K;
             }
 
             return result;
+        },
+
+        async aesEncrypt() {
+            try {
+                const keyData = new TextEncoder().encode(this.aesKey);
+                const key = await window.crypto.subtle.importKey(
+                    'raw',
+                    keyData,
+                    { name: 'AES-CBC' },
+                    false,
+                    ['encrypt']
+                );
+
+                let iv;
+                if (this.aesMode === 'CBC') {
+                    iv = new TextEncoder().encode(this.aesIv.padEnd(16, '0').substring(0, 16));
+                } else {
+                    iv = new Uint8Array(16);
+                }
+
+                const encrypted = await window.crypto.subtle.encrypt(
+                    {
+                        name: 'AES-CBC',
+                        iv: iv
+                    },
+                    key,
+                    this.aesFileInfo.data
+                );
+
+                this.downloadFile(new Uint8Array(encrypted), 'encrypted_aes.bin');
+                this.operationResult = 'Файл успешно зашифрован методом AES';
+                this.operationError = '';
+            } catch (error) {
+                this.operationError = 'Ошибка при шифровании AES: ' + error.message;
+                this.operationResult = '';
+            }
+        },
+
+        async aesDecrypt() {
+            try {
+                const keyData = new TextEncoder().encode(this.aesKey);
+                const key = await window.crypto.subtle.importKey(
+                    'raw',
+                    keyData,
+                    { name: 'AES-CBC' },
+                    false,
+                    ['decrypt']
+                );
+
+                let iv;
+                if (this.aesMode === 'CBC') {
+                    iv = new TextEncoder().encode(this.aesIv.padEnd(16, '0').substring(0, 16));
+                } else {
+                    iv = new Uint8Array(16);
+                }
+
+                const decrypted = await window.crypto.subtle.decrypt(
+                    {
+                        name: 'AES-CBC',
+                        iv: iv
+                    },
+                    key,
+                    this.aesFileInfo.data
+                );
+
+                this.downloadFile(new Uint8Array(decrypted), 'decrypted_aes.bin');
+                this.operationResult = 'Файл успешно расшифрован методом AES';
+                this.operationError = '';
+            } catch (error) {
+                this.operationError = 'Ошибка при расшифровании AES: ' + error.message;
+                this.operationResult = '';
+            }
         },
 
         downloadFile(data, filename) {
@@ -210,7 +300,7 @@ export default {
                     <div class="card-header bg-primary text-white">
                         <h1 class="h4 mb-0">
                             <i class="fas fa-lock me-2"></i>
-                            Шифр Вернама и поточные шифры
+                            Шифр Вернама, поточные и блочные шифры
                         </h1>
                     </div>
                 </div>
@@ -218,7 +308,7 @@ export default {
         </div>
 
         <div class="row">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <div class="card shadow mb-4">
                     <div class="card-header bg-success text-white">
                         <h2 class="h5 mb-0">
@@ -265,7 +355,7 @@ export default {
                 </div>
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <div class="card shadow mb-4">
                     <div class="card-header bg-danger text-white">
                         <h2 class="h5 mb-0">
@@ -294,6 +384,46 @@ export default {
                     </div>
                 </div>
 
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-purple text-white">
+                        <h2 class="h5 mb-0">
+                            <i class="fas fa-cube me-2"></i>
+                            Блочный шифр AES
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Исходный файл:</label>
+                            <input type="file" class="form-control" @change="handleAesFileUpload" ref="aesFileInput">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Ключ (16/24/32 байта):</label>
+                            <input type="text" class="form-control" v-model="aesKey" placeholder="Введите ключ">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Режим:</label>
+                            <select class="form-select" v-model="aesMode">
+                                <option value="CBC">CBC</option>
+                                <option value="ECB">ECB</option>
+                            </select>
+                        </div>
+                        <div class="mb-3" v-if="aesMode === 'CBC'">
+                            <label class="form-label">IV (16 байт):</label>
+                            <input type="text" class="form-control" v-model="aesIv" placeholder="Вектор инициализации">
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-purple" @click="aesEncrypt" :disabled="!canProcessAes">
+                                <i class="fas fa-lock me-2"></i>Зашифровать AES
+                            </button>
+                            <button class="btn btn-orange" @click="aesDecrypt" :disabled="!canProcessAes">
+                                <i class="fas fa-unlock me-2"></i>Расшифровать AES
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
                 <div class="card shadow">
                     <div class="card-header bg-dark text-white">
                         <h2 class="h5 mb-0">
@@ -332,6 +462,12 @@ export default {
                                         {{ rc4FileInfo.name || 'Не выбран' }}
                                     </span>
                                 </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Файл для AES
+                                    <span class="badge" :class="aesFileInfo.name ? 'bg-success' : 'bg-secondary'">
+                                        {{ aesFileInfo.name || 'Не выбран' }}
+                                    </span>
+                                </li>
                             </ul>
                         </div>
                     </div>
@@ -354,5 +490,37 @@ export default {
 
 .badge {
     font-size: 0.75em;
+}
+
+.bg-purple {
+    background-color: #6f42c1 !important;
+}
+
+.btn-purple {
+    background-color: #6f42c1;
+    border-color: #6f42c1;
+    color: white;
+}
+
+.btn-purple:hover {
+    background-color: #5a359c;
+    border-color: #5a359c;
+    color: white;
+}
+
+.bg-orange {
+    background-color: #fd7e14 !important;
+}
+
+.btn-orange {
+    background-color: #fd7e14;
+    border-color: #fd7e14;
+    color: white;
+}
+
+.btn-orange:hover {
+    background-color: #e66a03;
+    border-color: #e66a03;
+    color: white;
 }
 </style>
